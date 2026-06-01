@@ -1,10 +1,8 @@
-# agent.py
-
-from dotenv import load_dotenv
 from anthropic import Anthropic
+from dotenv import load_dotenv
 
-from tools import tools
 from tool_runner import run_tool
+from tools import tools
 
 load_dotenv()
 
@@ -25,6 +23,11 @@ Always verify who you are speaking with before discussing account details."""
 
 def run_agent(user_message: str) -> str:
     conversation_history = [{"role": "user", "content": user_message}]
+
+    session_state = {
+        "verified_customer_id": None,
+        "verified_customer_name": None,
+    }
 
     while True:
         response = client.messages.create(
@@ -48,7 +51,7 @@ def run_agent(user_message: str) -> str:
 
             for block in response.content:
                 if block.type == "tool_use":
-                    result = run_tool(block.name, block.input)
+                    result = run_tool(block.name, block.input, session_state)
                     tool_results.append(
                         {
                             "type": "tool_result",
@@ -61,7 +64,7 @@ def run_agent(user_message: str) -> str:
 
 
 if __name__ == "__main__":
-    print("Customer Support Agent, Stage 1")
+    print("Customer Support Agent, Stage 2")
     print("Type 'quit' to exit")
     print("=" * 40)
 
