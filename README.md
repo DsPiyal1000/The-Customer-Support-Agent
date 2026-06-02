@@ -1,225 +1,131 @@
-# 🤖 Customer Support Agent — AI That Actually Acts
-
-> A lightweight, working example of an AI agent built with Python and Claude.  
-> Not just a chatbot. An agent that **does things** — and does them **safely**.
+```
+# 🤖 Customer Support Agent
+> *An AI that doesn't just talk — it acts. And acts safely.*
 
 ---
 
 ## What Is This?
 
-This is a customer support agent that bridges the gap between *talking to an AI* and *using an AI*.
+A customer support agent built with **Python + Claude** that takes real actions — looking up accounts, fetching orders, processing refunds — by calling tools behind the scenes.
 
-Most chatbots answer questions. This one takes **actions** — looking up accounts, fetching order details, explaining warehouse holds, and processing refunds — all by calling real tools behind the scenes.
+But here's what makes it different:
 
-But here is the part that makes it different from most examples you will find:
+**Safety rules are enforced in code, not in prompts.**
 
-**The safety rules are enforced in code, not in prompts.**
-
-If you tell an AI *"always verify identity before processing a refund"*, it might forget that rule mid-conversation. That is a probabilistic risk. In this project, the code literally cannot run a refund unless a verification flag is set to `True` in memory. No amount of clever prompting can bypass it. That is a deterministic guarantee.
+Most agents rely on telling the AI *"remember to verify identity first."* That's a probabilistic hope. In this project, the refund function *literally cannot run* unless a verification flag is set in memory. No prompt trick can bypass it. That's a deterministic guarantee.
 
 ---
 
-## Why Does This Matter?
+## The Problem It Solves
 
-Most AI agent tutorials show you the happy path — the AI works, the tool runs, everyone is happy.
-
-Real applications need to handle:
-
-- A user who tries to skip identity verification
-- An order ID that belongs to someone else
-- A refund request with no verified session
-
-This project shows you exactly how to handle all of those — with clean architecture that separates **what the AI wants to do** from **what the code actually allows**.
-
----
-
-## 🌟 Key Features
-
-| Feature | What It Means |
+| Challenge | How It's Handled |
 | :--- | :--- |
-| **No database needed** | Uses realistic mock data — run it instantly |
-| **Real tool logic** | Handles success, failure, and edge cases |
-| **Session state gates** | Critical actions are blocked in code, not just in prompts |
-| **Structured error recovery** | When a gate blocks an action, the agent understands why and corrects itself |
-| **Clean architecture** | Data, tools, engine, and brain are all in separate files |
-| **Production patterns** | `.env` for keys, structured error handling throughout |
+| AI picks the wrong tool | Precise, unambiguous tool descriptions |
+| Vague error messages | Structured errors with category + recovery guidance |
+| Safety rules forgotten mid-chat | Code-enforced gates — bypassing is impossible |
+| Tools tied to one app | Stateless MCP server for reuse anywhere |
 
 ---
 
-## 🚀 Getting Started
+## How It Works
 
-### Prerequisites
-
-Make sure you have **Python 3.9 or higher** installed.
-
-Not sure? Check by running this in your terminal:
-
-```bash
-python --version
+```
+User Message
+     ↓
+ agent.py          ← Manages conversation + session state
+     ↓
+ tool_runner.py    ← Executes tools + enforces safety gates
+     ↓
+ tools.py          ← Defines what the agent can do
+     ↓
+ mcp_server.py     ← Exposes tools to any external app
 ```
 
-### Step 1 — Install Dependencies
+### The Safety Gate (Core Idea)
 
-Open your terminal in the project folder and run:
+```python
+def process_refund(order_id: str, session_state: dict) -> dict:
+    if not session_state.get("verified_customer_id"):
+        return {"error": "Identity verification required before processing a refund."}
+    # Only runs if the gate passes ↑
+```
 
+The AI decides *when* to call the function. The function decides *whether* to actually run. That separation is everything.
+
+---
+
+## Quick Start
+
+**1. Install dependencies**
 ```bash
 pip install anthropic python-dotenv
 ```
 
-### Step 2 — Add Your API Key
+**2. Add your API key**
 
-Create a file named `.env` in the root folder and add this line:
-
+Create a `.env` file in the root folder:
 ```ini
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
 ```
+> Get a key at [console.anthropic.com](https://console.anthropic.com) — and never commit this file.
 
-> 🔒 **Security note:** The `.env` file is already in `.gitignore`. Never commit your API key to a public repository. Get a key at [console.anthropic.com](https://console.anthropic.com) if you do not have one yet.
-
-### Step 3 — Run the Agent
-
+**3. Run the agent**
 ```bash
 python agent.py
 ```
 
-That is it. The agent starts and waits for your input.
+---
+
+## Try These 5 Scenarios
+
+| # | What to Type | What You'll See |
+| :- | :--- | :--- |
+| ✅ | `"Where is my order ORD-8821?"` | Smooth lookup + warehouse hold explained |
+| ⚠️ | `"Where is my order ORD-1234?"` | Order not found — handled gracefully |
+| 📭 | `"What orders do I have?"` *(as James Okafor)* | Account exists, no orders — no crash |
+| 🚫 | `"Refund order ORD-8821."` | Gate blocks it — asks for identity first |
+| ✅ | `"I'm Sarah Chen. Refund order ORD-8821."` | Full verified flow — refund succeeds |
+
+After the last one, try `"Refund order ORD-9999"` — that order belongs to someone else, so even with Sarah verified, it gets blocked.
 
 ---
 
-## 🧪 Try These Scenarios
-
-The agent is designed to handle real situations, not just the easy ones. Here are five worth trying:
-
-### ✅ The Happy Path — Order Lookup
-```
-"Where is my order ORD-8821?"
-```
-The agent finds the customer, the order, and explains the warehouse hold clearly.
-
----
-
-### ⚠️ The Missing Order
-```
-"Where is my order ORD-1234?"
-```
-The agent finds the customer but notices the order ID does not exist, then guides the user politely instead of crashing.
-
----
-
-### 📭 The Empty Account
-```
-"What orders do I have?"  (try this as James Okafor)
-```
-The account exists but has no orders. The agent explains this clearly without treating it as an error.
-
----
-
-### 🚫 The Blocked Refund Attempt
-```
-"Refund order ORD-8821."
-```
-The agent tries to process the refund, but the code checks `session_state`. Since no identity has been verified, the tool returns a structured error. The agent politely asks for your name first — it cannot proceed any other way.
-
----
-
-### ✅ The Full Refund Flow
-```
-"I'm Sarah Chen. Refund order ORD-8821."
-```
-This time it works:
-1. Agent calls `get_customer` → finds Sarah
-2. Writes verified ID to `session_state`
-3. The gate opens
-4. Refund processes
-
-Try following this with `"Refund order ORD-9999"` — that order belongs to someone else, so even with Sarah verified, it gets blocked.
-
----
-
-## 🏗️ How It Works
-
-### Session State — The Memory That Counts
-
-Instead of relying on the conversation history (which is just text), the agent maintains a Python dictionary called `session_state` that tracks what actually happened.
-
-- **Conversation history says:** "Claude said it would verify the user."
-- **Session state says:** `verified_customer_id = "C001"` — or `None`.
-
-The code checks the state, not the chat log. If the state says unverified, the action is impossible.
-
----
-
-### Programmatic Prerequisites — The Safety Gates
-
-Every critical tool has a gate at the very top:
-
-```python
-def process_refund(order_id: str, session_state: dict) -> dict:
-    # Gate: this check happens before anything else
-    if not session_state.get("verified_customer_id"):
-        return {"error": "Identity verification required before processing a refund."}
-
-    # ... rest of the logic only runs if the gate passes
-```
-
-The AI can *decide* to call this function whenever it wants. But the Python function decides whether to actually run. That separation — AI handles intent, code handles enforcement — is the core pattern here.
-
----
-
-### Structured Error Recovery — The Feedback Loop
-
-When a gate blocks an action, the tool returns a clear structured error rather than crashing. The agent reads this, understands what is missing, and automatically corrects its approach.
-
-```
-Agent calls process_refund → Gate returns error: "verification required"
-→ Agent reads error → Agent asks user for their name → User provides name
-→ Agent calls get_customer → Writes verified ID to session_state
-→ Agent calls process_refund again → Gate passes → Refund succeeds
-```
-
-This loop runs automatically. No hardcoded flow. The agent figures it out.
-
----
-
-## 📂 Project Structure
+## Project Structure
 
 ```
 project/
-│
-├── mock_data.py      # The "database" — customers, orders, and refund records
-├── tools.py          # Definitions of what the agent can do
-├── tool_runner.py    # The engine — executes tools and enforces state gates
-├── agent.py          # The brain — manages the conversation loop and session state
-└── .env              # Your API key (never commit this)
+├── agent.py          # Conversation loop + session state
+├── tool_runner.py    # Tool execution + safety gates
+├── tools.py          # Tool definitions
+├── mock_data.py      # In-memory "database" (no setup needed)
+├── mcp_server.py     # Stateless MCP interface
+└── .env              # Your API key — never commit this
 ```
-
-Each file has one job. This makes the code easy to read and even easier to extend.
 
 ---
 
-## 💡 The Bigger Idea
-
-This architecture reflects an important principle in production AI systems:
+## The Bigger Idea
 
 > **LLMs are probabilistic. Systems must be deterministic.**
 
-Relying on prompts alone to enforce rules is a risk — especially for anything involving money, personal data, or security. The gates in this project are a direct implementation of that principle: the AI handles conversation and reasoning, while the code handles enforcement and trust.
+Prompts guide. Code enforces. This project keeps those two responsibilities cleanly separated — so "the AI forgot the rule" is never an acceptable failure mode.
 
-The same pattern scales to any high-risk action — cancellations, data exports, privilege escalations, or anything where "the AI forgot the rule" is not an acceptable failure mode.
-
----
-
-## 🔭 What to Build Next
-
-This project is a foundation. Once you understand the patterns here, natural next steps include:
-
-- **Add a `cancel_order` tool** with a gate that checks whether the order has already shipped
-- **Add a timeout handler** for slow database responses
-- **Add a frustration detector** that routes angry users to a human escalation path
-- **Replace mock data** with a real database connection
-
-The architecture is already set up for all of this. The files are separated, the patterns are clean, and the gates are in the right place.
+The same pattern applies anywhere the stakes are real: refunds, cancellations, data exports, privilege changes.
 
 ---
 
-## 🙏 Happy Building
+## What to Build Next
+
+Once you're comfortable with the patterns here, natural extensions include:
+
+- `cancel_order` tool with a gate that checks shipment status
+- A frustration detector that routes upset users to a human
+- Real database connection replacing the mock data
+- Timeout handling for slow external services
+
+The architecture is already set up for all of it.
+
+---
+
+*Happy building.* 🌟
+```
