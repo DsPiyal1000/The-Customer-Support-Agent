@@ -1,4 +1,3 @@
-```
 # 🤖 Customer Support Agent
 > *An AI that doesn't just talk — it acts. And acts safely.*
 
@@ -86,7 +85,7 @@ python agent.py
 | 🚫 | `"Refund order ORD-8821."` | Gate blocks it — asks for identity first |
 | ✅ | `"I'm Sarah Chen. Refund order ORD-8821."` | Full verified flow — refund succeeds |
 
-After the last one, try `"Refund order ORD-9999"` — that order belongs to someone else, so even with Sarah verified, it gets blocked.
+> 💡 After the last one, try `"Refund order ORD-9999"` — that order belongs to someone else, so even with Sarah verified, it gets blocked.
 
 ---
 
@@ -128,4 +127,3 @@ The architecture is already set up for all of it.
 ---
 
 *Happy building.* 🌟
-```
