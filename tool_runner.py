@@ -12,11 +12,20 @@ def get_customer(query: str, session_state: dict) -> str:
             or query == customer["email"].lower()
             or query == customer["name"].lower()
         ):
+            # Verification successful — write to session state before returning.
+            # This write is what unlocks the process_refund gate later in
+            # the conversation. The ordering matters: we write after confirming
+            # the customer exists but before returning, so state always reflects
+            # what actually happened rather than what was attempted.
             session_state["verified_customer_id"] = customer["customer_id"]
             session_state["verified_customer_name"] = customer["name"]
 
             return json.dumps(customer)
 
+    # No match found — return a structured validation error.
+    # retryable: False because sending the same query again won't help.
+    # The message tells Claude both what went wrong and what alternatives
+    # are available (name, email, or ID), giving it a clear recovery path.
     return json.dumps(
         {
             "error": {
@@ -34,6 +43,9 @@ def get_customer(query: str, session_state: dict) -> str:
 
 
 def lookup_order(order_id: str, session_state: dict) -> str:
+    # Normalise the order ID format before lookup.
+    # Customers sometimes type order IDs in lowercase — strip and uppercase
+    # before checking so 'ord-8821' finds the same record as 'ORD-8821'.
     order_id = order_id.strip().upper()
 
     if order_id in ORDERS:
@@ -45,17 +57,23 @@ def lookup_order(order_id: str, session_state: dict) -> str:
                 "type": "validation",
                 "retryable": False,
                 "message": (
-                    f"No order found with ID '{order_id}'. The order ID may be "
-                    "incorrect or in the wrong format. Order IDs follow the format "
-                    "ORD-XXXX (e.g. 'ORD-8821'). Ask the customer to double-check the "
-                    "order number from their confirmation email/receipt and try again."
+                    f"No order found with ID '{order_id}'. "
+                    "Please check the order ID and try again."
                 ),
             }
         }
     )
 
 
-def process_refund(customer_id: str, order_id: str, amount: float, session_state: dict) -> str:
+def process_refund(
+    customer_id: str, order_id: str, amount: float, session_state: dict
+) -> str:
+    # Gate check 1: Has identity verification happened in this session?
+    # session_state["verified_customer_id"] starts as None and only gets
+    # set when get_customer successfully finds a customer. Using .get()
+    # is defensive — if the key is missing entirely (shouldn't happen given
+    # our initialisation, but defensive code is good code), it returns None
+    # rather than raising a KeyError.
     if not session_state.get("verified_customer_id"):
         return json.dumps(
             {
@@ -71,6 +89,13 @@ def process_refund(customer_id: str, order_id: str, amount: float, session_state
             }
         )
 
+    # Gate check 2: Does the customer_id in this refund request match
+    # the customer who was actually verified in this session?
+    # This closes a real security gap: if Claude has seen multiple customer
+    # records in a conversation (from retries, corrections, or edge cases),
+    # it might pass the wrong customer_id to this function. This check
+    # ensures the refund always targets the specifically verified customer,
+    # regardless of what else Claude has seen in the conversation.
     if customer_id != session_state["verified_customer_id"]:
         return json.dumps(
             {
@@ -87,6 +112,8 @@ def process_refund(customer_id: str, order_id: str, amount: float, session_state
             }
         )
 
+    # Both gates passed. Now do input validation before any state changes.
+    # The principle: validate everything before doing anything irreversible.
     if order_id not in ORDERS:
         return json.dumps(
             {
@@ -101,6 +128,10 @@ def process_refund(customer_id: str, order_id: str, amount: float, session_state
             }
         )
 
+    # Check the order belongs to the verified customer.
+    # A verified customer shouldn't be able to trigger a refund on someone
+    # else's order just by knowing the order ID. This cross-reference
+    # catches that case before any money moves.
     order = ORDERS[order_id]
     if order["customer_id"] != session_state["verified_customer_id"]:
         return json.dumps(
@@ -116,6 +147,9 @@ def process_refund(customer_id: str, order_id: str, amount: float, session_state
             }
         )
 
+    # All checks passed — process the refund.
+    # In production this would call a payments API. Here we return a
+    # simulated successful response with the fields a real API would return.
     return json.dumps(
         {
             "success": True,
@@ -133,24 +167,29 @@ def process_refund(customer_id: str, order_id: str, amount: float, session_state
 
 
 def run_tool(tool_name: str, tool_input: dict, session_state: dict) -> str:
+    # run_tool is the single routing point for all tool execution.
+    # Every tool call from Claude goes through here, which means session_state
+    # only needs to be threaded through one place rather than multiple call sites.
+    # Any new tool you add gets access to session state automatically just by
+    # being added to this routing function.
     if tool_name == "get_customer":
         return get_customer(tool_input["query"], session_state)
-    if tool_name == "lookup_order":
+    elif tool_name == "lookup_order":
         return lookup_order(tool_input["order_id"], session_state)
-    if tool_name == "process_refund":
+    elif tool_name == "process_refund":
         return process_refund(
             tool_input["customer_id"],
             tool_input["order_id"],
             tool_input["amount"],
             session_state,
         )
-
-    return json.dumps(
-        {
-            "error": {
-                "type": "validation",
-                "retryable": False,
-                "message": f"Tool '{tool_name}' is not recognised.",
+    else:
+        return json.dumps(
+            {
+                "error": {
+                    "type": "validation",
+                    "retryable": False,
+                    "message": f"Tool '{tool_name}' is not recognised.",
+                }
             }
-        }
-    )
+        )
